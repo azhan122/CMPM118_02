@@ -1,24 +1,57 @@
-import { createAgent, tool } from "langchain";
-import * as z from "zod";
+const SYSTEM_PROMPT = `You are a literary data assistant.
 
-const getWeather = tool(
-  (input) => `It's always sunny in ${input.city}!`,
-  {
-    name: "get_weather",
-    description: "Get the weather for a given city",
-    schema: z.object({
-      city: z.string().describe("The city to get the weather for"),
-    }),
-  }
+## Capabilities
+
+- \`fetch_text_from_url\`: loads document text from a URL into the conversation.
+Do not guess line counts or positions—ground them in tool results from the saved file.`;
+
+
+
+import { tool } from "@langchain/core/tools";
+import { createAgent, initChatModel } from "langchain";
+import { z } from "zod";
+
+const fetchTextFromUrl = tool(
+    async ({ url }: { url: string }): Promise<string> => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120_000);
+        try {
+            const resp = await fetch(url, {
+                headers: {
+                "User-Agent": "Mozilla/5.0 (compatible; quickstart-research/1.0)",
+                },
+                signal: controller.signal,
+            });
+            if (!resp.ok) {
+                return `Fetch failed: HTTP ${resp.status} ${resp.statusText}`;
+            }
+            return await resp.text();
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return `Fetch failed: ${msg}`;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    },
+    {
+        name: "fetch_text_from_url",
+        description: "Fetch the document from a URL.",
+        schema: z.object({ url: z.string().url() }),
+    },
 );
 
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [getWeather],
+
+
+import { initChatModel } from "langchain";
+
+const model = await initChatModel("gpt-5.5", {
+  temperature: 0.5,
+  timeout: 300,
+  maxTokens: 25000,
 });
 
-console.log(
-  await agent.invoke({
-    messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
-  })
-);
+
+
+import { MemorySaver } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
