@@ -1,3 +1,22 @@
+import 'dotenv/config';
+
+// Your key is now available as:
+// process.env.BAYLEAF_API_KEY
+
+import { HumanMessage } from "@langchain/core/messages";
+
+
+import { ChatOpenAI } from "@langchain/openai";  
+
+const model = new ChatOpenAI({  
+    model: "openrouter:z-ai/glm-5.3-flash",  
+    apiKey: process.env.BAYLEAF_API_KEY,  
+    configuration: { baseURL: "https://api.bayleaf.dev/v1" }, 
+}); 
+
+
+
+
 const SYSTEM_PROMPT = `You are a literary data assistant.
 
 ## Capabilities
@@ -5,53 +24,50 @@ const SYSTEM_PROMPT = `You are a literary data assistant.
 - \`fetch_text_from_url\`: loads document text from a URL into the conversation.
 Do not guess line counts or positions—ground them in tool results from the saved file.`;
 
+import { v7 as uuid7 } from "uuid";
+import { entrypoint, MemorySaver } from "@langchain/langgraph";
 
+// Initialize a checkpointer
+const checkpointer = new MemorySaver();
 
-import { tool } from "@langchain/core/tools";
-import { createAgent, initChatModel } from "langchain";
-import { z } from "zod";
+// A reusable sub-workflow that multiplies a number
+const multiply = entrypoint(
+  { name: "multiply" },
+  async (inputs: { a: number; b: number }) => {
+    return inputs.a * inputs.b;
+  }
+);
 
-const fetchTextFromUrl = tool(
-    async ({ url }: { url: string }): Promise<string> => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120_000);
-        try {
-            const resp = await fetch(url, {
-                headers: {
-                "User-Agent": "Mozilla/5.0 (compatible; quickstart-research/1.0)",
-                },
-                signal: controller.signal,
-            });
-            if (!resp.ok) {
-                return `Fetch failed: HTTP ${resp.status} ${resp.statusText}`;
-            }
-            return await resp.text();
-        } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            return `Fetch failed: ${msg}`;
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    },
-    {
-        name: "fetch_text_from_url",
-        description: "Fetch the document from a URL.",
-        schema: z.object({ url: z.string().url() }),
-    },
+// Main workflow that invokes the sub-workflow
+const main = entrypoint(
+  { checkpointer, name: "main" },
+  async (inputs: { x: number; y: number }) => {
+    const result = await multiply.invoke({ a: inputs.x, b: inputs.y });
+    return { product: result };
+  }
 );
 
 
 
-//import { initChatModel } from "langchain";
+const llm = new ChatOpenAI({
+    model: "gpt-3.5-turbo",
+    temperature: 0,
+    // Make sure to set your OpenAI API key in environment variables
+    // or pass it directly: openAIApiKey: "your-api-key"
+  });
 
-const model = await initChatModel("gpt-5.5", {
-  temperature: 0.5,
-  timeout: 300,
-  maxTokens: 25000,
-});
+  // Bind the tools to the LLM
+  const llmWithTools = llm.bindTools([multiply]); // if you have more than one tool, add it to the array after multiply...
 
+  // Example 1: Simple tool usage
+  console.log("=== Example 1: Calling Multiply ===");
+  const response1 = await llmWithTools.invoke([
+    new HumanMessage("What is 12 multiplied by 8?")
+  ]);
+  
+  console.log("AI Response:", response1.content);
+  console.log("Tool calls:", response1.tool_calls);
 
-
-import { MemorySaver } from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
+// Execute the main workflow
+//const config = { configurable: { thread_id: uuid7() } };
+//console.log(await main.invoke({ x: 6, y: 7 }, config)); // Output: { product: 42 }
