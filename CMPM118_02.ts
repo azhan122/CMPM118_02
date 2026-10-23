@@ -54,7 +54,7 @@ const llm = new ChatOpenAI({
     temperature: 0,
     // Make sure to set your OpenAI API key in environment variables
     // or pass it directly: openAIApiKey: "your-api-key"
-  });
+});
 
   // Bind the tools to the LLM
   const llmWithTools = llm.bindTools([multiply]); // if you have more than one tool, add it to the array after multiply...
@@ -64,7 +64,7 @@ const llm = new ChatOpenAI({
   const response1 = await llmWithTools.invoke([
     new HumanMessage("What is 12 multiplied by 8?")
   ]);
-  
+  //console.log(response1);
   console.log("AI Response:", response1.content);
   console.log("Tool calls:", response1.tool_calls);
 
